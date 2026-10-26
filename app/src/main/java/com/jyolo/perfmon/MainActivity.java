@@ -195,7 +195,7 @@ public class MainActivity extends Activity {
             rgInterval.addView(rb, radioLp());
         }
         rgInterval.setOnCheckedChangeListener((g, id) -> {
-            RadioButton rb = g.findViewById(id);
+            RadioButton rb = g.findViewById(g.getCheckedRadioButtonId());
             if (rb == null) {
                 return;
             }
@@ -217,12 +217,13 @@ public class MainActivity extends Activity {
             rgScale.addView(rb, radioLp());
         }
         rgScale.setOnCheckedChangeListener((g, id) -> {
-            RadioButton rb = g.findViewById(id);
+            RadioButton rb = g.findViewById(g.getCheckedRadioButtonId());
             if (rb == null) {
                 return;
             }
             prefs.edit().putInt(Prefs.KEY_TEXT_SCALE, (int) rb.getTag()).apply();
             reloadService();
+            PerfMonA11yService.reloadIfConnected();
         });
         setCard.addView(rgScale, fill(0));
 
@@ -578,9 +579,20 @@ public class MainActivity extends Activity {
                 : String.format(Locale.US, "电池 %.1f°C", s.batteryTempC));
         if (Float.isNaN(s.powerW)) {
             info.append("   功耗 --");
+            if (s.rawCurrent != Integer.MIN_VALUE) {
+                info.append(String.format(Locale.US, "\n原始电流 %d 电压 %d（单位由 ROM 决定，可据此核对）",
+                        s.rawCurrent, s.rawVoltage));
+            }
         } else {
+            // 把原始读数一并显示：换机/换 ROM 时能立刻看出单位是 µA 还是 mA、电压是 mV 还是 µV
             info.append(String.format(Locale.US, "   功耗 %.2fW%s",
                     s.powerW, s.charging ? " (充电中)" : ""));
+            long absCur = Math.abs((long) s.rawCurrent);
+            long mA = absCur > 20_000L ? absCur / 1000L : absCur;
+            double volts = s.rawVoltage >= 2_000 && s.rawVoltage <= 6_000
+                    ? s.rawVoltage / 1000d : s.rawVoltage / 1_000_000d;
+            info.append(String.format(Locale.US, "\n原始 %dmA @ %.2fV（ROM 原始值 %d / %d）",
+                    mA, volts, s.rawCurrent, s.rawVoltage));
         }
         tvPreviewInfo.setText(info.toString().trim());
     }
@@ -651,6 +663,9 @@ public class MainActivity extends Activity {
         rb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
         rb.setTextColor(0xFFDCE3EA);
         rb.setTag(tag);
+        // RadioGroup 靠子 View 的 id 维护互斥与选中态；不设 id 时它无法取消其它项，
+        // 表现就是“永远只有 1 秒被选中”，且 findViewById(checkedId) 返回 null → 设置存不下去。
+        rb.setId(View.generateViewId());
         // 等分整行后单格宽度有限：去掉最小宽度限制，边距收紧，避免"0.5 秒"被截断
         rb.setMinWidth(0);
         rb.setMinimumWidth(0);

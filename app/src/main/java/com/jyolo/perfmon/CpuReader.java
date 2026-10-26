@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.BatteryManager;
 import android.os.SystemClock;
+import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -245,7 +246,7 @@ public final class CpuReader {
         int voltRaw = Integer.MIN_VALUE;
         int mV = batteryVoltageMilliVolt();
         if (mV > 0) {
-            voltRaw = mV;                    // 单位 mV，下面按量级识别
+            voltRaw = mV;
         } else {
             Integer v = readInt(BATTERY_SYSFS + "/voltage_now");
             voltRaw = v == null ? Integer.MIN_VALUE : v;
@@ -255,35 +256,62 @@ public final class CpuReader {
         s.rawVoltage = voltRaw;
 
         if (curRaw == Integer.MIN_VALUE || voltRaw == Integer.MIN_VALUE) {
+            logPowerOnce(s, "缺原始值");
             return;
         }
 
-        // 电流 → 安培
-        double amps;
+        double volts = voltsOf(voltRaw);
+        if (Double.isNaN(volts)) {
+            logPowerOnce(s, "电压量级不像 mV/µV");
+            return;
+        }
+
         long absCur = Math.abs((long) curRaw);
         if (absCur == 0) {
-            amps = 0d;
-        } else if (absCur <= 20_000L) {
-            amps = absCur / 1000d;          // 厂商给的是 mA
-        } else {
-            amps = absCur / 1_000_000d;     // 标准 µA
-        }
-
-        // 电压 → 伏特
-        double volts;
-        long absVolt = Math.abs((long) voltRaw);
-        if (absVolt >= 2_000L && absVolt <= 6_000L) {
-            volts = absVolt / 1000d;        // mV
-        } else {
-            volts = absVolt / 1_000_000d;   // µV
-        }
-
-        double w = amps * volts;
-        // 合理性闸门：0..30 W 之外当坏数据（手机整机功耗不会超过这个量级）
-        if (w < 0d || w > 30d) {
+            s.powerW = 0f;
+            logPowerOnce(s, "电流为 0");
             return;
         }
-        s.powerW = (float) w;
+
+        // 电流单位有两种口径：AOSP 标准 µA，部分厂商给 mA。
+        // 不靠“数值大小猜阈值”，而是看算出来的功率是否落在手机该有的区间（0.05..25 W）：
+        // 先用 µA 解释；不合理再用 mA 解释。两个都不合理就当读不到，绝不硬凑一个数。
+        double[] candidates = {absCur / 1_000_000d, absCur / 1_000d};
+        String[] candidateNames = {"µA", "mA"};
+        for (int i = 0; i < candidates.length; i++) {
+            double w = candidates[i] * volts;
+            if (w >= 0.05d && w <= 25d) {
+                s.powerW = (float) w;
+                logPowerOnce(s, "按 " + candidateNames[i] + " 解释 → " + String.format(Locale.US, "%.2fW", w));
+                return;
+            }
+        }
+        logPowerOnce(s, "两种单位解释都超出 0.05..25W");
+    }
+
+    /** 电压归一化到伏特：mV(2000..6000) 或 µV(2000000..6000000)，其它一律当不可用。 */
+    private static double voltsOf(int raw) {
+        long v = Math.abs((long) raw);
+        if (v >= 2_000L && v <= 6_000L) {
+            return v / 1000d;              // mV
+        }
+        if (v >= 2_000_000L && v <= 6_000_000L) {
+            return v / 1_000_000d;         // µV
+        }
+        return Double.NaN;
+    }
+
+    /** 前 3 次采样打一遍原始值，方便在真机上核对 ROM 给的是什么单位。 */
+    private int powerLogCount;
+
+    private void logPowerOnce(Sample s, String how) {
+        if (powerLogCount >= 3) {
+            return;
+        }
+        powerLogCount++;
+        Log.i("PerfMonPow", "raw current=" + s.rawCurrent + " voltage=" + s.rawVoltage
+                + " charging=" + s.charging + " → " + how
+                + " | power=" + (Float.isNaN(s.powerW) ? "NaN" : String.format(Locale.US, "%.2fW", s.powerW)));
     }
 
     private int batteryInt(int property) {

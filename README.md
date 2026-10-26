@@ -9,7 +9,7 @@ Android 悬浮窗监控工具。无 root，读内核 sysfs 与 BatteryManager，
 | 源码 | `~/data/perfmon` |
 | APK | `~/data/perfmon/app/build/outputs/apk/release/app-release.apk` |
 | 包名 | `com.jyolo.perfmon` |
-| 版本 | 1.2.0 (versionCode 3) |
+| 版本 | 1.3.1 (versionCode 5) |
 | 签名 | 自签 `selfsign.jks`（口令在 `local.properties`，均已 gitignore） |
 | 体积 | 约 30 KB |
 
@@ -113,6 +113,17 @@ PerfMonA11yService    → TYPE_ACCESSIBILITY_OVERLAY（开关打开且无障碍�
 
 模拟器实测（Android 14，`dumpsys battery` 报告 voltage=5000mV、status=2 充电中）：
 面板显示 `功耗 4.50W ⚡`（该模拟器 `dumpsys battery` 报 voltage=5000mV、status=2 充电中，故带闪电）；开关「显示功耗」可整行隐藏，改动即时生效。
+
+## 已知修复：单选按钮互斥失效（1.3.0）
+
+症状：刷新间隔里「1 秒」永远是选中的，点其它选项没有任何反应，设置也不落盘。
+
+根因：`RadioButton` 没有设置 id。`RadioGroup` 靠子 View 的 id 维护互斥与选中态，id 为 `NO_ID` 时
+它无法取消其它已选项；同时监听器里 `findViewById(g.getCheckedRadioButtonId())` 返回 null，
+于是「保存设置」那一步被直接 return 掉了 —— 看起来像点了没反应。
+
+修法：`rb.setId(View.generateViewId())`，监听器统一用 `getCheckedRadioButtonId()` 取当前项。
+实测：点「2 秒」后仅 2 秒选中；再点「0.5 秒」后仅 0.5 秒选中；强杀进程重启后仍是 0.5 秒（已落盘）。
 
 ## 外部控制（adb / Tasker / 快捷方式）
 
