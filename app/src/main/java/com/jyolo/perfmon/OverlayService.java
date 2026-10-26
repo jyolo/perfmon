@@ -73,6 +73,7 @@ public class OverlayService extends Service {
     private float textSp = 11.5f;
     private boolean showMem = true;
     private boolean showBat = true;
+    private boolean showPower = true;
     private boolean collapsed = false;
     private int alphaPct = Prefs.DEFAULT_ALPHA_PCT;
 
@@ -247,7 +248,7 @@ public class OverlayService extends Service {
         final int screenW = screenMetricsW();
         final int screenH = screenMetricsH();
 
-        final PanelView pv = new PanelView(this, reader, textSp, showMem, showBat, collapsed);
+        final PanelView pv = new PanelView(this, reader, textSp, showMem, showBat, showPower, collapsed);
         pv.setOnCloseListener(() -> {
             Log.i(TAG, "close tapped");
             stopSelf();
@@ -338,6 +339,7 @@ public class OverlayService extends Service {
         textSp = Prefs.textSizeSp(this);
         showMem = prefs.getBoolean(Prefs.KEY_SHOW_MEM, true);
         showBat = prefs.getBoolean(Prefs.KEY_SHOW_BATTERY, true);
+        showPower = prefs.getBoolean(Prefs.KEY_SHOW_POWER, true);
         collapsed = prefs.getBoolean(Prefs.KEY_COLLAPSED, false);
         alphaPct = Prefs.alphaPct(this);
     }

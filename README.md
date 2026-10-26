@@ -9,7 +9,7 @@ Android 悬浮窗监控工具。无 root，读内核 sysfs 与 BatteryManager，
 | 源码 | `~/data/perfmon` |
 | APK | `~/data/perfmon/app/build/outputs/apk/release/app-release.apk` |
 | 包名 | `com.jyolo.perfmon` |
-| 版本 | 1.1.0 (versionCode 2) |
+| 版本 | 1.2.0 (versionCode 3) |
 | 签名 | 自签 `selfsign.jks`（口令在 `local.properties`，均已 gitignore） |
 | 体积 | 约 30 KB |
 
@@ -42,7 +42,7 @@ adb shell appops set com.jyolo.perfmon SYSTEM_ALERT_WINDOW allow   # 或用界�
 
 - 刷新间隔：0.5 / 1 / 2 / 3 秒
 - 字号：小 / 中 / 大（面板宽度随之 150 / 166 / 184 dp）
-- 可选显示：内存占用、电池温度
+- 可选显示：内存占用、电池温度、功耗
 - 悬浮窗透明度：20%–100%，滑杆拖动实时生效（`View.setAlpha`，不重建面板）
 - 无障碍浮层：开关（详见下节）
 
@@ -90,9 +90,29 @@ PerfMonA11yService    → TYPE_ACCESSIBILITY_OVERLAY（开关打开且无障碍�
 | CPU 温度 | `/sys/class/thermal/thermal_zone*/{type,temp}`，取 `cpu-*-usr` 分区最大值 | 宽松匹配 soc/cpu 分区；都没有显示 `--` |
 | 内存 | `ActivityManager.MemoryInfo` | 显示 `--` |
 | 电池温度 | `ACTION_BATTERY_CHANGED` 的 `EXTRA_TEMPERATURE` | 显示 `--` |
+| 功耗 | `BatteryManager.BATTERY_PROPERTY_CURRENT_NOW` × `EXTRA_VOLTAGE`，回落 `/sys/class/power_supply/battery/{current_now,voltage_now}` | 显示 `--` |
 
 温度合理性闸门：`-20..150 °C` 之外的值一律丢弃，防止个别内核的坏 zone 把数字顶上去。
 主界面的「实时读取」区块会显示命中的 thermal zone 名（如 `cpu-1-1-usr`），便于核对来源。
+
+## 功耗（W）怎么算的
+
+`功耗 = |电流| × 电压`，单位瓦。取数顺序：
+
+1. `BatteryManager.getIntProperty(BATTERY_PROPERTY_CURRENT_NOW)` + sticky 广播的 `EXTRA_VOLTAGE`
+2. 回落 `/sys/class/power_supply/battery/current_now` + `voltage_now`
+3. 都拿不到 → 显示 `--`（不估算）
+
+两个必须处理的差异：
+
+- **单位不统一**：官方文档写 µA / µV，但部分厂商（三星等）给 mA / mV。代码按量级判定：
+  电流 `|v| ≤ 20000` 当 mA，电压 `2000..6000` 当 mV，其余按 µA / µV 处理。
+- **充电时电流方向相反**：此时功率是「充入电池」而不是「整机耗电」，面板会在数值后加一个 ⚡，
+  设置页的实时预览行显示「(充电中)」。
+- 合理性闸门：算出 0..30 W 之外的值一律丢，避免个别 ROM 的坏读数把数字顶上天。
+
+模拟器实测（Android 14，`dumpsys battery` 报告 voltage=5000mV、status=2 充电中）：
+面板显示 `功耗 4.50W ⚡`（该模拟器 `dumpsys battery` 报 voltage=5000mV、status=2 充电中，故带闪电）；开关「显示功耗」可整行隐藏，改动即时生效。
 
 ## 外部控制（adb / Tasker / 快捷方式）
 

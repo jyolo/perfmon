@@ -73,6 +73,7 @@ public class PerfMonA11yService extends AccessibilityService {
     private float textSp = 11.5f;
     private boolean showMem = true;
     private boolean showBat = true;
+    private boolean showPower = true;
     private boolean collapsed = false;
     private int alphaPct = Prefs.DEFAULT_ALPHA_PCT;
 
@@ -132,6 +133,7 @@ public class PerfMonA11yService extends AccessibilityService {
         textSp = Prefs.textSizeSp(this);
         showMem = prefs.getBoolean(Prefs.KEY_SHOW_MEM, true);
         showBat = prefs.getBoolean(Prefs.KEY_SHOW_BATTERY, true);
+        showPower = prefs.getBoolean(Prefs.KEY_SHOW_POWER, true);
         collapsed = prefs.getBoolean(Prefs.KEY_COLLAPSED, false);
         alphaPct = Prefs.alphaPct(this);
     }
@@ -164,7 +166,7 @@ public class PerfMonA11yService extends AccessibilityService {
         final int screenW = screenMetricsW();
         final int screenH = screenMetricsH();
 
-        PanelView pv = new PanelView(this, reader, textSp, showMem, showBat, collapsed);
+        PanelView pv = new PanelView(this, reader, textSp, showMem, showBat, showPower, collapsed);
         pv.setOnCloseListener(() -> {
             Log.i(TAG, "close tapped -> 关闭无障碍浮层开关");
             prefs.edit().putBoolean(Prefs.KEY_A11Y_OVERLAY, false).apply();

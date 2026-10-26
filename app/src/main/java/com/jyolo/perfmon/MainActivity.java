@@ -240,6 +240,14 @@ public class MainActivity extends Activity {
         });
         setCard.addView(cbBat, fill(0));
 
+        CheckBox cbPower = check("显示功耗", prefs.getBoolean(Prefs.KEY_SHOW_POWER, true));
+        cbPower.setOnCheckedChangeListener((b, checked) -> {
+            prefs.edit().putBoolean(Prefs.KEY_SHOW_POWER, checked).apply();
+            reloadService();
+            PerfMonA11yService.reloadIfConnected();
+        });
+        setCard.addView(cbPower, fill(0));
+
         // ---------- 外观卡（透明度）
         LinearLayout lookCard = card();
         root.addView(lookCard, fill(14));
@@ -568,6 +576,12 @@ public class MainActivity extends Activity {
         info.append(Float.isNaN(s.batteryTempC)
                 ? "电池 --"
                 : String.format(Locale.US, "电池 %.1f°C", s.batteryTempC));
+        if (Float.isNaN(s.powerW)) {
+            info.append("   功耗 --");
+        } else {
+            info.append(String.format(Locale.US, "   功耗 %.2fW%s",
+                    s.powerW, s.charging ? " (充电中)" : ""));
+        }
         tvPreviewInfo.setText(info.toString().trim());
     }
 

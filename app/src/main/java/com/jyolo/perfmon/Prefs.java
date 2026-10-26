@@ -12,6 +12,7 @@ public final class Prefs {
     public static final String KEY_TEXT_SCALE = "text_scale";       // 0 小 / 1 中 / 2 大
     public static final String KEY_SHOW_MEM = "show_mem";
     public static final String KEY_SHOW_BATTERY = "show_battery";
+    public static final String KEY_SHOW_POWER = "show_power";
     public static final String KEY_COLLAPSED = "collapsed";
     public static final String KEY_ALPHA_PCT = "alpha_pct";         // 悬浮窗不透明度 20..100
     public static final String KEY_A11Y_OVERLAY = "a11y_overlay";   // 用无障碍浮层显示（对抗 hideOverlayWindows）

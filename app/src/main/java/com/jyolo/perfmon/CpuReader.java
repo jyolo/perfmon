@@ -51,10 +51,13 @@ public final class CpuReader {
     /** 由 OverlayService 的 sticky 广播接收器写入，单位 0.1 °C。 */
     private volatile int batteryTenthsC = Integer.MIN_VALUE;
 
+    private final BatteryManager batteryManager;
+
     public CpuReader(Context ctx) {
         Context app = ctx.getApplicationContext();
         this.appCtx = app;
         this.am = (ActivityManager) app.getSystemService(Context.ACTIVITY_SERVICE);
+        this.batteryManager = (BatteryManager) app.getSystemService(Context.BATTERY_SERVICE);
         this.cpuCount = countCpus();
         this.freqPrimary = new String[cpuCount];
         this.freqFallback = new String[cpuCount];
@@ -86,6 +89,7 @@ public final class CpuReader {
         s.cpuTempC = readCpuTempC();
         s.cpuTempZone = lastTempZone;
         s.batteryTempC = batteryTempC();
+        readPower(s);
         fillMemory(s);
         s.atElapsedMs = SystemClock.elapsedRealtime();
         return s;
@@ -210,6 +214,123 @@ public final class CpuReader {
         zoneType = types.toArray(new String[0]);
     }
 
+    // ---------------------------------------------------------------- 功耗
+
+    private static final String BATTERY_SYSFS = "/sys/class/power_supply/battery";
+
+    /**
+     * 功耗 = |电流| × 电压。
+     *
+     * 取数顺序：BatteryManager 的 CURRENT_NOW(µA) + VOLTAGE(µV) → 回落 /sys/class/power_supply/battery 的
+     * current_now + voltage_now → 再回落 sticky 广播的 EXTRA_VOLTAGE(mV)。
+     *
+     * 两个坑：
+     *  1) 单位不统一：官方文档写 µA/µV，但部分厂商（三星等）给的是 mA/mV。按量级判定：
+     *     电流 |v| ≤ 20000 视为 mA，电压 2000..6000 视为 mV。
+     *  2) 充电时电流为正（电流灌进电池），放空时为负。数值取绝对值，另外用 charging 标记区分，
+     *     避免把「充入功率」当成「整机功耗」看。
+     *
+     * 读不到就保持 NaN，界面显示 --，不做估算。
+     */
+    private void readPower(Sample s) {
+        s.charging = isCharging();
+
+        int curRaw = batteryInt(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+        if (curRaw == Integer.MIN_VALUE) {
+            Integer c = readInt(BATTERY_SYSFS + "/current_now");
+            curRaw = c == null ? Integer.MIN_VALUE : c;
+        }
+
+        // BatteryManager 没有「电压」属性：电压只能从 sticky 广播（mV）或 sysfs（µV）拿
+        int voltRaw = Integer.MIN_VALUE;
+        int mV = batteryVoltageMilliVolt();
+        if (mV > 0) {
+            voltRaw = mV;                    // 单位 mV，下面按量级识别
+        } else {
+            Integer v = readInt(BATTERY_SYSFS + "/voltage_now");
+            voltRaw = v == null ? Integer.MIN_VALUE : v;
+        }
+
+        s.rawCurrent = curRaw;
+        s.rawVoltage = voltRaw;
+
+        if (curRaw == Integer.MIN_VALUE || voltRaw == Integer.MIN_VALUE) {
+            return;
+        }
+
+        // 电流 → 安培
+        double amps;
+        long absCur = Math.abs((long) curRaw);
+        if (absCur == 0) {
+            amps = 0d;
+        } else if (absCur <= 20_000L) {
+            amps = absCur / 1000d;          // 厂商给的是 mA
+        } else {
+            amps = absCur / 1_000_000d;     // 标准 µA
+        }
+
+        // 电压 → 伏特
+        double volts;
+        long absVolt = Math.abs((long) voltRaw);
+        if (absVolt >= 2_000L && absVolt <= 6_000L) {
+            volts = absVolt / 1000d;        // mV
+        } else {
+            volts = absVolt / 1_000_000d;   // µV
+        }
+
+        double w = amps * volts;
+        // 合理性闸门：0..30 W 之外当坏数据（手机整机功耗不会超过这个量级）
+        if (w < 0d || w > 30d) {
+            return;
+        }
+        s.powerW = (float) w;
+    }
+
+    private int batteryInt(int property) {
+        if (batteryManager == null) {
+            return Integer.MIN_VALUE;
+        }
+        try {
+            int v = batteryManager.getIntProperty(property);
+            // 不同 ROM 用 MIN_VALUE / 0 / -1 表示“不支持”，只有量级明显合理时才认
+            if (v == Integer.MIN_VALUE || v == Integer.MAX_VALUE) {
+                return Integer.MIN_VALUE;
+            }
+            return v;
+        } catch (Exception e) {
+            return Integer.MIN_VALUE;
+        }
+    }
+
+    /** sticky 广播里的 EXTRA_VOLTAGE，单位 mV；拿不到返回 -1。 */
+    private int batteryVoltageMilliVolt() {
+        try {
+            Intent i = appCtx.registerReceiver(null,
+                    new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (i == null) {
+                return -1;
+            }
+            return i.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    private boolean isCharging() {
+        try {
+            Intent i = appCtx.registerReceiver(null,
+                    new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (i == null) {
+                return false;
+            }
+            int status = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+            return status == BatteryManager.BATTERY_STATUS_CHARGING
+                    || status == BatteryManager.BATTERY_STATUS_FULL;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     // ---------------------------------------------------------------- 内存
 
     private void fillMemory(Sample s) {
@@ -282,6 +403,13 @@ public final class CpuReader {
         public long memTotalMb = -1;
         public long memAvailMb = -1;
         public int memUsedPct = -1;
+        /** 功耗（瓦）。NaN = 读不到。 */
+        public float powerW = Float.NaN;
+        /** 当前是否在充电（充电时电流方向相反，功率含义是“充入”而不是“整机耗电”）。 */
+        public boolean charging;
+        /** 原始读数，仅用于日志取证（µA/mA、µV/mV 由 ROM 决定）。 */
+        public int rawCurrent = Integer.MIN_VALUE;
+        public int rawVoltage = Integer.MIN_VALUE;
         public long atElapsedMs;
 
         /** 所有在线核心里的最高频率（kHz），没有可用值时返回 -1。 */

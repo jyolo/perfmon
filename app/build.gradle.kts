@@ -19,8 +19,8 @@ android {
         applicationId = "com.jyolo.perfmon"
         minSdk = 26           // TYPE_APPLICATION_OVERLAY 自 API 26 起
         targetSdk = 33
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     signingConfigs {

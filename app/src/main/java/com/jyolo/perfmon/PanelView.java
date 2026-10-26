@@ -40,17 +40,18 @@ class PanelView extends LinearLayout {
     private TextView tvTemp;
     private TextView tvMem;
     private TextView tvBat;
+    private TextView tvPower;
 
     private boolean collapsed;
     private Runnable onClose;
 
     PanelView(Context ctx, CpuReader reader, float cellSp,
-              boolean showMem, boolean showBat, boolean collapsed) {
+              boolean showMem, boolean showBat, boolean showPower, boolean collapsed) {
         super(ctx);
         this.reader = reader;
         this.cellSp = cellSp;
         this.collapsed = collapsed;
-        build(showMem, showBat);
+        build(showMem, showBat, showPower);
     }
 
     void setOnCloseListener(Runnable r) {
@@ -77,7 +78,7 @@ class PanelView extends LinearLayout {
         setAlpha(a);
     }
 
-    private void build(boolean showMem, boolean showBat) {
+    private void build(boolean showMem, boolean showBat, boolean showPower) {
         setOrientation(VERTICAL);
         setPadding(dp(8), dp(6), dp(8), dp(9));
         GradientDrawable bg = new GradientDrawable();
@@ -162,6 +163,12 @@ class PanelView extends LinearLayout {
         tvBat.setVisibility(showBat ? VISIBLE : GONE);
         expandedBox.addView(tvBat);
 
+        tvPower = text("功耗 --", cellSp, COLOR_DIM, false);
+        tvPower.setTypeface(Typeface.MONOSPACE);
+        tvPower.setSingleLine(true);
+        tvPower.setVisibility(showPower ? VISIBLE : GONE);
+        expandedBox.addView(tvPower);
+
         setCollapsed(collapsed);
 
         // 子 View 不吃触摸，保证整块面板都能拖；✕ 有 OnClickListener，保持可点
@@ -222,6 +229,16 @@ class PanelView extends LinearLayout {
             tvBat.setText(Float.isNaN(s.batteryTempC)
                     ? "电池 --"
                     : String.format(Locale.US, "电池 %.1f°C", s.batteryTempC));
+        }
+
+        if (tvPower != null) {
+            if (Float.isNaN(s.powerW)) {
+                tvPower.setText("功耗 --");
+            } else {
+                // 充电时电流是灌进电池的，标一个 ⚡ 免得把充入功率当整机耗电看
+                tvPower.setText(String.format(Locale.US, "功耗 %.2fW%s",
+                        s.powerW, s.charging ? " ⚡" : ""));
+            }
         }
 
         if (tvCollapsed != null) {
