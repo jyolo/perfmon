@@ -237,9 +237,15 @@ public final class CpuReader {
         s.charging = isCharging();
 
         int curRaw = batteryInt(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
-        if (curRaw == Integer.MIN_VALUE) {
+        // 关键：0 也要当“可疑”处理。不少 ROM 对不支持的属性返回 0 而不是 MIN_VALUE，
+        // 直接当 0 电流就会一直显示 0.00W。此时去 sysfs 再问一次。
+        if (curRaw == Integer.MIN_VALUE || curRaw == 0) {
             Integer c = readInt(BATTERY_SYSFS + "/current_now");
-            curRaw = c == null ? Integer.MIN_VALUE : c;
+            if (c != null && c != 0) {
+                curRaw = c;
+            } else if (curRaw == Integer.MIN_VALUE) {
+                curRaw = Integer.MIN_VALUE;
+            }
         }
 
         // BatteryManager 没有「电压」属性：电压只能从 sticky 广播（mV）或 sysfs（µV）拿
@@ -249,7 +255,7 @@ public final class CpuReader {
             voltRaw = mV;
         } else {
             Integer v = readInt(BATTERY_SYSFS + "/voltage_now");
-            voltRaw = v == null ? Integer.MIN_VALUE : v;
+            voltRaw = v == null || v == 0 ? Integer.MIN_VALUE : v;
         }
 
         s.rawCurrent = curRaw;
@@ -268,25 +274,53 @@ public final class CpuReader {
 
         long absCur = Math.abs((long) curRaw);
         if (absCur == 0) {
-            s.powerW = 0f;
-            logPowerOnce(s, "电流为 0");
+            // 手机不存在“0 瓦”的空闲状态；读到 0 说明这个 ROM 没给真实电流。
+            // 宁可显示 --，也不要摆一个假的 0.00W。
+            logPowerOnce(s, "电流为 0（ROM 不提供真实电流）→ 显示 --");
             return;
         }
 
-        // 电流单位有两种口径：AOSP 标准 µA，部分厂商给 mA。
-        // 不靠“数值大小猜阈值”，而是看算出来的功率是否落在手机该有的区间（0.05..25 W）：
-        // 先用 µA 解释；不合理再用 mA 解释。两个都不合理就当读不到，绝不硬凑一个数。
-        double[] candidates = {absCur / 1_000_000d, absCur / 1_000d};
-        String[] candidateNames = {"µA", "mA"};
-        for (int i = 0; i < candidates.length; i++) {
-            double w = candidates[i] * volts;
-            if (w >= 0.05d && w <= 25d) {
-                s.powerW = (float) w;
-                logPowerOnce(s, "按 " + candidateNames[i] + " 解释 → " + String.format(Locale.US, "%.2fW", w));
-                return;
-            }
+        double watts = wattsFrom(absCur, volts);
+        if (Double.isNaN(watts)) {
+            logPowerOnce(s, "两种单位解释都超出 0.05..25W");
+            return;
         }
-        logPowerOnce(s, "两种单位解释都超出 0.05..25W");
+        s.powerW = (float) watts;
+        logPowerOnce(s, "按 " + (unitMode == UNIT_MA ? "mA" : "µA") + " 解释 → "
+                + String.format(Locale.US, "%.2fW", watts));
+    }
+
+    // 电流单位一旦确认就锁定，避免逐样本在 µA / mA 之间来回跳：
+    //   |raw| > 20000 只可能是 µA（换算成 mA 就是 20 A 以上，不可能）
+    private static final int UNIT_UNKNOWN = 0;
+    private static final int UNIT_UA = 1;
+    private static final int UNIT_MA = 2;
+    private static int unitMode = UNIT_UNKNOWN;
+
+    /** 用两种口径各算一次功率，取落在 0.05..25 W 的那个；都不合理返回 NaN。 */
+    private double wattsFrom(long absCur, double volts) {
+        if (absCur > 20_000L) {
+            unitMode = UNIT_UA;
+        }
+        if (unitMode == UNIT_UA) {
+            double w = absCur / 1_000_000d * volts;
+            return (w >= 0.05d && w <= 25d) ? w : Double.NaN;
+        }
+        if (unitMode == UNIT_MA) {
+            double w = absCur / 1_000d * volts;
+            return (w >= 0.05d && w <= 25d) ? w : Double.NaN;
+        }
+        // 还没定单位：先按 µA（AOSP 标准），不合理再按 mA
+        double ua = absCur / 1_000_000d * volts;
+        if (ua >= 0.05d && ua <= 25d) {
+            return ua;
+        }
+        double ma = absCur / 1_000d * volts;
+        if (ma >= 0.05d && ma <= 25d) {
+            unitMode = UNIT_MA;      // 只有 mA 解释成立时才锁定为 mA
+            return ma;
+        }
+        return Double.NaN;
     }
 
     /** 电压归一化到伏特：mV(2000..6000) 或 µV(2000000..6000000)，其它一律当不可用。 */

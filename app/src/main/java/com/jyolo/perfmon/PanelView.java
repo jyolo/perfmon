@@ -235,9 +235,8 @@ class PanelView extends LinearLayout {
             if (Float.isNaN(s.powerW)) {
                 tvPower.setText("功耗 --");
             } else {
-                // 充电时电流是灌进电池的，标一个 ⚡ 免得把充入功率当整机耗电看
-                tvPower.setText(String.format(Locale.US, "功耗 %.2fW%s",
-                        s.powerW, s.charging ? " ⚡" : ""));
+                // 面板只留纯数值，不放图标；充电中与否在设置页的实时读取里用文字标注
+                tvPower.setText(String.format(Locale.US, "功耗 %.2fW", s.powerW));
             }
         }
 
