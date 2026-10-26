@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  仅申请「观察窗口切换」这一项能力：PerfMon 不需要读取任何界面文本，
+  它借用无障碍服务只是为了获得 TYPE_ACCESSIBILITY_OVERLAY 的窗口绘制权限。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/a11y_service_desc"
+    android:notificationTimeout="0"
+    android:summary="@string/a11y_service_summary" />

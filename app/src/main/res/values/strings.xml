@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PerfMon</string>
+    <string name="a11y_service_summary">让悬浮窗在会隐藏普通悬浮窗的应用上也能显示</string>
+    <string name="a11y_service_desc">PerfMon 只使用「观察窗口切换」这一项能力，用于以无障碍浮层的方式显示 CPU 频率/温度面板。不读取任何界面文字或输入内容，不联网上传。</string>
+</resources>

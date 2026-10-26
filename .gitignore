@@ -1,0 +1,7 @@
+local.properties
+selfsign.jks
+.gradle/
+build/
+app/build/
+*.iml
+.idea/
